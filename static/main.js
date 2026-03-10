@@ -6,28 +6,44 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 
 const statusEl = document.getElementById("status");
-const markersLayer = L.layerGroup().addTo(map);
 
 function setStatus(msg) {
   statusEl.textContent = msg || "";
 }
 
+const cluster = L.markerClusterGroup();
+map.addLayer(cluster);
+
 function plotGeoJson(geojson) {
-  markersLayer.clearLayers();
+  cluster.clearLayers();
 
   const layer = L.geoJSON(geojson, {
-    pointToLayer: (_, latlng) => L.circleMarker(latlng, { radius: 5 }),
+    pointToLayer: (_, latlng) =>
+      L.circleMarker(latlng, {
+        radius: 6,
+        color: "#ff10f0",
+        weight: 2,
+        fillColor: "#ff10f0",
+        fillOpacity: 0.9,
+      }),
+
+    style: () => ({
+      color: "#ff10f0",
+      weight: 3,
+      opacity: 0.9,
+      fillColor: "#ff10f0",
+      fillOpacity: 0.25,
+    }),
 
     onEachFeature: (feature, marker) => {
       const p = feature.properties || {};
-
       const issueddate = p.issueddate ?? "N/A";
       const workclassgroup = p.workclassgroup ?? "N/A";
       const contractorname = p.contractorname ?? "N/A";
       const communityname = p.communityname ?? "N/A";
       const originaladdress = p.originaladdress ?? "N/A";
 
-      const html = `
+      marker.bindPopup(`
         <div>
           <b>Issued Date:</b> ${issueddate}<br>
           <b>Work Class Group:</b> ${workclassgroup}<br>
@@ -35,13 +51,11 @@ function plotGeoJson(geojson) {
           <b>Community Name:</b> ${communityname}<br>
           <b>Original Address:</b> ${originaladdress}
         </div>
-      `;
+      `);
+    },
+  })
 
-      marker.bindPopup(html);
-    }
-  });
-
-  layer.addTo(markersLayer);
+  cluster.addLayer(layer);
 
   const bounds = layer.getBounds();
   if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
