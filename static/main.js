@@ -1,81 +1,80 @@
-const map = L.map("map").setView([51.0447, -114.0719], 11);
+document.addEventListener("DOMContentLoaded", () => {
+  const statusEl = document.getElementById("status");
+  const startEl = document.getElementById("startDate");
+  const endEl = document.getElementById("endDate");
+  const btn = document.getElementById("searchBtn");
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19,
-  attribution: "&copy; OpenStreetMap contributors",
-}).addTo(map);
+  const setStatus = (msg) => (statusEl.textContent = msg || "");
 
-const statusEl = document.getElementById("status");
+  const map = L.map("map").setView([51.0447, -114.0719], 11);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors",
+  }).addTo(map);
 
-function setStatus(msg) {
-  statusEl.textContent = msg || "";
-}
+  const cluster = L.markerClusterGroup().addTo(map);
 
-const cluster = L.markerClusterGroup();
-map.addLayer(cluster);
+  const icon = L.divIcon({
+    className: "permit-marker",
+    html: '<div class="permit-dot"></div>',
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
+  });
 
-function plotGeoJson(geojson) {
-  cluster.clearLayers();
+  let oms = null;
+  const resetOMS = () => {
+    oms = typeof OverlappingMarkerSpiderfier === "function"
+      ? new OverlappingMarkerSpiderfier(map, { keepSpiderfied: true, nearbyDistance: 20 })
+      : null;
+  };
 
-  const layer = L.geoJSON(geojson, {
-    pointToLayer: (_, latlng) =>
-      L.circleMarker(latlng, {
-        radius: 6,
-        color: "#ff10f0",
-        weight: 2,
-        fillColor: "#ff10f0",
-        fillOpacity: 0.9,
-      }),
+  const popupHtml = (p) => `
+    <div>
+      <b>Issued Date:</b> ${p.issueddate ?? "N/A"}<br>
+      <b>Work Class Group:</b> ${p.workclassgroup ?? "N/A"}<br>
+      <b>Contractor Name:</b> ${p.contractorname ?? "N/A"}<br>
+      <b>Community Name:</b> ${p.communityname ?? "N/A"}<br>
+      <b>Original Address:</b> ${(p.originaladdress ?? p.locationaddresses) ?? "N/A"}
+    </div>
+  `;
 
-    style: () => ({
-      color: "#ff10f0",
-      weight: 3,
-      opacity: 0.9,
-      fillColor: "#ff10f0",
-      fillOpacity: 0.25,
-    }),
+  const plot = (geojson) => {
+    cluster.clearLayers();
+    resetOMS();
 
-    onEachFeature: (feature, marker) => {
-      const p = feature.properties || {};
-      const issueddate = p.issueddate ?? "N/A";
-      const workclassgroup = p.workclassgroup ?? "N/A";
-      const contractorname = p.contractorname ?? "N/A";
-      const communityname = p.communityname ?? "N/A";
-      const originaladdress = p.originaladdress ?? "N/A";
+    const layer = L.geoJSON(geojson, {
+      pointToLayer: (_, latlng) => L.marker(latlng, { icon }),
+      onEachFeature: (f, m) => {
+        m.bindPopup(popupHtml(f.properties || {}));
+        if (oms) oms.addMarker(m);
+      },
+    });
 
-      marker.bindPopup(`
-        <div>
-          <b>Issued Date:</b> ${issueddate}<br>
-          <b>Work Class Group:</b> ${workclassgroup}<br>
-          <b>Contractor Name:</b> ${contractorname}<br>
-          <b>Community Name:</b> ${communityname}<br>
-          <b>Original Address:</b> ${originaladdress}
-        </div>
-      `);
-    },
-  })
+    cluster.addLayer(layer);
 
-  cluster.addLayer(layer);
+    const b = layer.getBounds();
+    if (b.isValid()) map.fitBounds(b, { padding: [30, 30] });
+  };
 
-  const bounds = layer.getBounds();
-  if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
-}
+  btn.addEventListener("click", async () => {
+    const start = startEl.value;
+    const end = endEl.value;
 
-document.getElementById("searchBtn").addEventListener("click", async () => {
-  const start = document.getElementById("startDate").value;
-  const end = document.getElementById("endDate").value;
+    if (!start || !end) return setStatus("Pick both dates.");
+    if (start > end) return setStatus("Start must be before end.");
 
-  if (!start || !end) return setStatus("Pick both dates.");
-  if (start > end) return setStatus("Start must be before end.");
+    setStatus("Searching...");
 
-  setStatus("Searching...");
+    try {
+      const res = await fetch(`/api/permits?start=${start}&end=${end}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) return setStatus(data.error || "Search failed.");
+      setStatus(`Found ${data.features?.length || 0} permits.`);
+      plot(data);
+    } catch {
+      setStatus("Request failed.");
+    }
+  });
 
-  const res = await fetch(`/api/permits?start=${start}&end=${end}`);
-  const data = await res.json();
-
-  if (!res.ok) return setStatus(data.error || "Search failed.");
-
-  const count = data.features?.length || 0;
-  setStatus(`Found ${count} permits.`);
-  plotGeoJson(data);
+  setStatus("Ready.");
 });
